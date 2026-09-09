@@ -357,7 +357,8 @@ export async function analyzeProfile(username: string) {
       const graphqlData = await graphqlRes.json();
       const collection = graphqlData?.data?.user?.contributionsCollection;
       if (collection) {
-        contributions = collection.contributionCalendar?.totalContributions || 0;
+        contributions =
+          collection.contributionCalendar?.totalContributions || 0;
         commits = collection.totalCommitContributions || 0;
         pullRequests = collection.totalPullRequestContributions || 0;
         issues = collection.totalIssueContributions || 0;
@@ -414,14 +415,20 @@ export async function analyzeProfile(username: string) {
   const repositoryScore = normalize(originalRepos.length, 30) * 15;
   const starScore = normalize(totalStars, 100) * 15;
   const forkScore = normalize(totalForks, 50) * 5;
-  const languageScore = Math.min(1, Object.keys(languageCounts).length / 6) * 10;
+  const languageScore =
+    Math.min(1, Object.keys(languageCounts).length / 6) * 10;
   const activityScore = Math.min(1, recentRepositories / 10) * 10;
 
   const score = Math.min(
     100,
     Math.round(
-      contributionScore + commitScore + repositoryScore + starScore +
-        forkScore + languageScore + activityScore,
+      contributionScore +
+        commitScore +
+        repositoryScore +
+        starScore +
+        forkScore +
+        languageScore +
+        activityScore,
     ),
   );
 
@@ -451,7 +458,10 @@ export async function analyzeProfile(username: string) {
 
   let parsedAnalysis = {
     jobRole: detectedRole,
-    strengths: ["Active GitHub development", "Demonstrated technical project work"],
+    strengths: [
+      "Active GitHub development",
+      "Demonstrated technical project work",
+    ],
     recommendations: [
       "Build more production-ready projects",
       "Contribute to established open-source projects",
@@ -463,66 +473,61 @@ export async function analyzeProfile(username: string) {
   // 3) Gemini gets a hard timeout. Fallback keeps the report usable.
   try {
     const prompt = `
-You are analyzing a GitHub developer profile.
+  Analyze this GitHub developer profile using ONLY the provided evidence.
 
-PROFILE:
-Username: ${cleanUsername}
-Name: ${userData.name || "Not provided"}
-Bio: ${userData.bio || "Not provided"}
-Followers: ${userData.followers || 0}
-Following: ${userData.following || 0}
-Public repositories: ${originalRepos.length}
+  PROFILE:
+  Username: ${cleanUsername}
+  Name: ${userData?.name || "Not provided"}
+  Bio: ${userData?.bio || "Not provided"}
+  Followers: ${userData?.followers || 0}
+  Public repositories: ${originalRepos.length}
 
-METRICS:
-Contributions: ${contributions}
-Commits: ${commits}
-Pull Requests: ${pullRequests}
-Issues: ${issues}
-Reviews: ${reviews}
-Stars: ${totalStars}
-Forks: ${totalForks}
-Languages: ${Object.keys(languageCounts).join(", ")}
+  GITHUB METRICS:
+  Contributions: ${contributions}
+  Commits: ${commits}
+  Pull Requests: ${pullRequests}
+  Issues: ${issues}
+  Reviews: ${reviews}
+  Stars: ${totalStars}
+  Forks: ${totalForks}
+  Languages: ${Object.keys(languageCounts).join(", ")}
 
-TOP LANGUAGES:
-${JSON.stringify(topLanguages)}
+  TOP LANGUAGES:
+  ${JSON.stringify(topLanguages)}
 
-ROLE SCORES:
-${JSON.stringify(roleScores)}
+  ROLE SCORES:
+  ${JSON.stringify(roleScores)}
 
-GITHUB SCORE:
-${score}/100
+  GITHUB SCORE: ${score}/100
+  TIER: ${tier}
 
-TIER:
-${tier}
+  TASK:
+  1. Select the most realistic developer role from the role scores and GitHub evidence.
+  2. Give 3 evidence-based strengths.
+  3. Give 3 practical improvement recommendations.
+  4. Give a concise 2-3 sentence career summary.
 
-TASK:
-Determine the most realistic developer role based ONLY on the GitHub evidence.
-Do not always choose Software Engineer.
+  Possible roles:
+  Frontend Developer, Backend Developer, Full-Stack Developer,
+  React Developer, TypeScript Developer, Python Developer,
+  AI / ML Engineer, DevOps Engineer, Data Engineer,
+  Open Source Developer, Mobile Developer.
 
-Possible roles include:
-Frontend Developer
-Backend Developer
-Full-Stack Developer
-React Developer
-TypeScript Developer
-Python Developer
-AI / ML Engineer
-DevOps Engineer
-Data Engineer
-Open Source Developer
-Mobile Developer
+  RULES:
+  - Use only the provided GitHub evidence.
+  - Do not invent skills or experience.
+  - Do not exaggerate.
+  - Prefer the highest relevant role score, but use the other metrics as supporting evidence.
+  - Return ONLY valid JSON.
 
-Return ONLY valid JSON:
-{
-  "jobRole": "specific role, 2-4 words",
-  "strengths": ["specific evidence-based strength", "specific evidence-based strength", "specific evidence-based strength"],
-  "recommendations": ["specific improvement", "specific project or skill recommendation", "specific career recommendation"],
-  "careerSummary": "2-3 sentence evidence-based career summary"
-}
-
-Do not exaggerate.
-Do not claim skills that are not supported by the GitHub data.
-`;
+  JSON:
+  {
+    "jobRole": "specific role",
+    "strengths": ["strength 1", "strength 2", "strength 3"],
+    "recommendations": ["recommendation 1", "recommendation 2", "recommendation 3"],
+    "careerSummary": "2-3 sentence evidence-based summary"
+  }
+  `;
 
     const geminiPromise = ai.models.generateContent({
       model: "gemini-3.1-flash-lite",
