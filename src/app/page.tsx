@@ -152,9 +152,9 @@ function ScoreRing({ score, tier }: { score: number; tier: string }) {
             x2="100%"
             y2="100%"
           >
-            <stop offset="0%" />
-            <stop offset="50%" />
-            <stop offset="100%" />
+            <stop offset="0%" stopColor="#a855f7" />
+            <stop offset="50%" stopColor="#22d3ee" />
+            <stop offset="100%" stopColor="#a855f7" />
           </linearGradient>
         </defs>
       </svg>
@@ -189,7 +189,6 @@ export default function GitHubRanker() {
 
     setLoading(true);
     setError("");
-    setData(null);
 
     try {
       const result = await analyzeProfile(input);
@@ -201,400 +200,277 @@ export default function GitHubRanker() {
     }
   }
 
-async function downloadPDF() {
-  if (!data) return;
+  async function downloadPDF() {
+    if (!data) return;
 
-  try {
-    const { jsPDF } = await import('jspdf');
+    try {
+      const { jsPDF } = await import("jspdf");
 
-    const pdf = new jsPDF({
-      orientation: 'portrait',
-      unit: 'mm',
-      format: 'a4',
-    });
+      const pdf = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4",
+      });
 
-    const margin = 15;
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 15;
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
 
-    let y = 20;
+      let y = 20;
 
+      const addTitle = (text: string) => {
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(18);
+        pdf.text(text, margin, y);
+        y += 10;
+      };
 
-    const addTitle = (text: string) => {
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(18);
-      pdf.text(text, margin, y);
-      y += 10;
-    };
-
-    const addSection = (text: string) => {
-      if (y > pageHeight - 35) {
-        addNewPage();
-      }
-
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(12);
-      pdf.text(text, margin, y);
-      y += 7;
-    };
-
-    const addText = (
-      text: string,
-      size = 9,
-      bold = false
-    ) => {
-      pdf.setFont(
-        'helvetica',
-        bold ? 'bold' : 'normal'
-      );
-
-      pdf.setFontSize(size);
-
-      const lines = pdf.splitTextToSize(
-        text,
-        pageWidth - margin * 2
-      );
-
-      lines.forEach((line: string) => {
-        if (y > pageHeight - 25) {
+      const addSection = (text: string) => {
+        if (y > pageHeight - 35) {
           addNewPage();
         }
 
-        pdf.text(line, margin, y);
-        y += 5;
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(12);
+        pdf.text(text, margin, y);
+        y += 7;
+      };
+
+      const addText = (text: string, size = 9, bold = false) => {
+        pdf.setFont("helvetica", bold ? "bold" : "normal");
+
+        pdf.setFontSize(size);
+
+        const lines = pdf.splitTextToSize(text, pageWidth - margin * 2);
+
+        lines.forEach((line: string) => {
+          if (y > pageHeight - 25) {
+            addNewPage();
+          }
+
+          pdf.text(line, margin, y);
+          y += 5;
+        });
+
+        y += 1;
+      };
+
+      const addNewPage = () => {
+        pdf.addPage();
+        y = 20;
+      };
+
+      addTitle("GitHub Developer Intelligence Report");
+
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(14);
+
+      pdf.text(`@${data.username}`, margin, y);
+
+      y += 7;
+
+      if (data.profile?.name) {
+        addText(data.profile.name, 10, false);
+      }
+
+      if (data.profile?.bio) {
+        addText(data.profile.bio, 9, false);
+      }
+
+      y += 3;
+
+      // --------------------------------------------------
+      // SCORE
+      // --------------------------------------------------
+
+      addSection("GitHub Profile Score");
+
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(28);
+
+      pdf.text(`${data.score}/100`, margin, y);
+
+      y += 20;
+
+      addText(`Tier: ${data.tier}`, 10, true);
+
+      y += 3;
+
+      // --------------------------------------------------
+      // CAREER MATCH
+      // --------------------------------------------------
+
+      addSection("Best Career Match");
+
+      addText(data.job_match || "Software Developer", 14, true);
+
+      y += 3;
+
+      // --------------------------------------------------
+      // PROFILE METRICS
+      // --------------------------------------------------
+
+      addSection("Profile Metrics");
+
+      const metrics = [
+        `Contributions: ${data.metrics?.contributions ?? 0}`,
+        `Commits: ${data.metrics?.commits ?? 0}`,
+        `Public Repositories: ${data.metrics?.repositories ?? 0}`,
+        `Stars: ${data.metrics?.stars ?? 0}`,
+        `Forks: ${data.metrics?.forks ?? 0}`,
+        `Pull Requests: ${data.metrics?.pullRequests ?? 0}`,
+        `Issues: ${data.metrics?.issues ?? 0}`,
+        `Reviews: ${data.metrics?.reviews ?? 0}`,
+        `Languages: ${data.metrics?.languages ?? 0}`,
+        `Recent Repositories: ${data.metrics?.recentRepositories ?? 0}`,
+      ];
+
+      metrics.forEach((metric) => {
+        addText(`• ${metric}`);
       });
 
-      y += 1;
-    };
+      y += 3;
 
-    const addNewPage = () => {
-      pdf.addPage();
-      y = 20;
-    };
+      // --------------------------------------------------
+      // SCORE BREAKDOWN
+      // --------------------------------------------------
 
+      addSection("Score Breakdown");
 
-    addTitle(
-      'GitHub Developer Intelligence Report'
-    );
+      const breakdown = data.score_breakdown;
 
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(14);
+      if (breakdown) {
+        addText(`Contributions: ${breakdown.contributions}/25`);
 
-    pdf.text(
-      `@${data.username}`,
-      margin,
-      y
-    );
+        addText(`Commits: ${breakdown.commits}/20`);
 
-    y += 7;
+        addText(`Repositories: ${breakdown.repositories}/15`);
 
-    if (data.profile?.name) {
-      addText(
-        data.profile.name,
-        10,
-        false
-      );
-    }
+        addText(`Stars: ${breakdown.stars}/15`);
 
-    if (data.profile?.bio) {
-      addText(
-        data.profile.bio,
-        9,
-        false
-      );
-    }
+        addText(`Forks: ${breakdown.forks}/5`);
 
-    y += 3;
+        addText(`Languages: ${breakdown.languages}/10`);
 
-    // --------------------------------------------------
-    // SCORE
-    // --------------------------------------------------
+        addText(`Activity: ${breakdown.activity}/10`);
+      }
 
-    addSection('GitHub Profile Score');
+      y += 3;
 
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(28);
+      // --------------------------------------------------
+      // TECHNICAL STACK
+      // --------------------------------------------------
 
-    pdf.text(
-      `${data.score}/100`,
-      margin,
-      y
-    );
+      addSection("Technical Stack");
 
-    y += 20;
+      if (data.top_languages && data.top_languages.length > 0) {
+        data.top_languages.forEach(
+          (language: { language: string; percentage: number }) => {
+            addText(`• ${language.language}: ${language.percentage}%`);
+          },
+        );
+      } else {
+        addText("No language data available.");
+      }
 
-    addText(
-      `Tier: ${data.tier}`,
-      10,
-      true
-    );
+      y += 3;
 
-    y += 3;
+      // --------------------------------------------------
+      // TOP REPOSITORIES
+      // --------------------------------------------------
 
-    // --------------------------------------------------
-    // CAREER MATCH
-    // --------------------------------------------------
+      addSection("Top Repositories");
 
-    addSection('Best Career Match');
-
-    addText(
-      data.job_match || 'Software Developer',
-      14,
-      true
-    );
-
-    y += 3;
-
-    // --------------------------------------------------
-    // PROFILE METRICS
-    // --------------------------------------------------
-
-    addSection('Profile Metrics');
-
-    const metrics = [
-      `Contributions: ${data.metrics?.contributions ?? 0}`,
-      `Commits: ${data.metrics?.commits ?? 0}`,
-      `Public Repositories: ${
-        data.metrics?.repositories ?? 0
-      }`,
-      `Stars: ${data.metrics?.stars ?? 0}`,
-      `Forks: ${data.metrics?.forks ?? 0}`,
-      `Pull Requests: ${
-        data.metrics?.pullRequests ?? 0
-      }`,
-      `Issues: ${data.metrics?.issues ?? 0}`,
-      `Reviews: ${data.metrics?.reviews ?? 0}`,
-      `Languages: ${
-        data.metrics?.languages ?? 0
-      }`,
-      `Recent Repositories: ${
-        data.metrics?.recentRepositories ?? 0
-      }`,
-    ];
-
-    metrics.forEach((metric) => {
-      addText(`• ${metric}`);
-    });
-
-    y += 3;
-
-    // --------------------------------------------------
-    // SCORE BREAKDOWN
-    // --------------------------------------------------
-
-    addSection('Score Breakdown');
-
-    const breakdown =
-      data.score_breakdown;
-
-    if (breakdown) {
-      addText(
-        `Contributions: ${breakdown.contributions}/25`
-      );
-
-      addText(
-        `Commits: ${breakdown.commits}/20`
-      );
-
-      addText(
-        `Repositories: ${breakdown.repositories}/15`
-      );
-
-      addText(
-        `Stars: ${breakdown.stars}/15`
-      );
-
-      addText(
-        `Forks: ${breakdown.forks}/5`
-      );
-
-      addText(
-        `Languages: ${breakdown.languages}/10`
-      );
-
-      addText(
-        `Activity: ${breakdown.activity}/10`
-      );
-    }
-
-    y += 3;
-
-    // --------------------------------------------------
-    // TECHNICAL STACK
-    // --------------------------------------------------
-
-    addSection('Technical Stack');
-
-    if (
-      data.top_languages &&
-      data.top_languages.length > 0
-    ) {
-      data.top_languages.forEach(
-        (language: {
-          language: string;
-          percentage: number;
-        }) => {
-          addText(
-            `• ${language.language}: ${language.percentage}%`
-          );
-        }
-      );
-    } else {
-      addText(
-        'No language data available.'
-      );
-    }
-
-    y += 3;
-
-    // --------------------------------------------------
-    // TOP REPOSITORIES
-    // --------------------------------------------------
-
-    addSection('Top Repositories');
-
-    if (
-      data.top_repositories &&
-      data.top_repositories.length > 0
-    ) {
-      data.top_repositories.forEach(
-        (repo: any) => {
-          addText(
-            repo.name,
-            10,
-            true
-          );
+      if (data.top_repositories && data.top_repositories.length > 0) {
+        data.top_repositories.forEach((repo: any) => {
+          addText(repo.name, 10, true);
 
           if (repo.description) {
-            addText(
-              repo.description
-            );
+            addText(repo.description);
           }
 
           addText(
             `Stars: ${repo.stars ?? 0} | Forks: ${
               repo.forks ?? 0
-            } | Language: ${
-              repo.language ?? 'Unknown'
-            }`
+            } | Language: ${repo.language ?? "Unknown"}`,
           );
 
           y += 2;
-        }
-      );
-    } else {
-      addText(
-        'No repositories available.'
-      );
-    }
+        });
+      } else {
+        addText("No repositories available.");
+      }
 
-    // --------------------------------------------------
-    // STRENGTHS
-    // --------------------------------------------------
+      // --------------------------------------------------
+      // STRENGTHS
+      // --------------------------------------------------
 
-    addSection('Strengths');
+      addSection("Strengths");
 
-    if (
-      data.strengths &&
-      data.strengths.length > 0
-    ) {
-      data.strengths.forEach(
-        (strength: string) => {
+      if (data.strengths && data.strengths.length > 0) {
+        data.strengths.forEach((strength: string) => {
           addText(`• ${strength}`);
-        }
-      );
+        });
+      }
+
+      y += 3;
+
+      // --------------------------------------------------
+      // RECOMMENDATIONS
+      // --------------------------------------------------
+
+      addSection("Recommendations");
+
+      if (data.recommendations && data.recommendations.length > 0) {
+        data.recommendations.forEach((recommendation: string) => {
+          addText(`• ${recommendation}`);
+        });
+      }
+
+      y += 3;
+
+      // --------------------------------------------------
+      // CAREER SUMMARY
+      // --------------------------------------------------
+
+      if (data.career_summary) {
+        addSection("Career Summary");
+
+        addText(data.career_summary);
+      }
+
+      // --------------------------------------------------
+      // CREATOR FOOTER
+      // --------------------------------------------------
+
+      // Make sure footer is always at the bottom
+      // of the current page.
+      if (y > pageHeight - 35) {
+        addNewPage();
+      }
+
+      pdf.setDrawColor(200, 200, 200);
+      pdf.line(margin, pageHeight - 20, pageWidth - margin, pageHeight - 20);
+
+      pdf.setFont("helvetica", "normal");
+
+      pdf.setFontSize(8);
+
+      pdf.text("Created by Himanshu Kumar Shahi", margin, pageHeight - 14);
+
+      pdf.text("GitHub: github.com/HimanshuKumarShahi", margin, pageHeight - 9);
+
+      // --------------------------------------------------
+      // DOWNLOAD
+      // --------------------------------------------------
+
+      pdf.save(`${data.username}-github-report.pdf`);
+    } catch (error) {
+      console.error("PDF generation failed:", error);
+
+      alert("Could not generate the PDF. Please try again.");
     }
-
-    y += 3;
-
-    // --------------------------------------------------
-    // RECOMMENDATIONS
-    // --------------------------------------------------
-
-    addSection('Recommendations');
-
-    if (
-      data.recommendations &&
-      data.recommendations.length > 0
-    ) {
-      data.recommendations.forEach(
-        (recommendation: string) => {
-          addText(
-            `• ${recommendation}`
-          );
-        }
-      );
-    }
-
-    y += 3;
-
-    // --------------------------------------------------
-    // CAREER SUMMARY
-    // --------------------------------------------------
-
-    if (data.career_summary) {
-      addSection('Career Summary');
-
-      addText(
-        data.career_summary
-      );
-    }
-
-    // --------------------------------------------------
-    // CREATOR FOOTER
-    // --------------------------------------------------
-
-    // Make sure footer is always at the bottom
-    // of the current page.
-    if (y > pageHeight - 35) {
-      addNewPage();
-    }
-
-    pdf.setDrawColor(200, 200, 200);
-    pdf.line(
-      margin,
-      pageHeight - 20,
-      pageWidth - margin,
-      pageHeight - 20
-    );
-
-    pdf.setFont(
-      'helvetica',
-      'normal'
-    );
-
-    pdf.setFontSize(8);
-
-    pdf.text(
-      'Created by Himanshu Kumar Shahi',
-      margin,
-      pageHeight - 14
-    );
-
-    pdf.text(
-      'GitHub: github.com/HimanshuKumarShahi',
-      margin,
-      pageHeight - 9
-    );
-
-    // --------------------------------------------------
-    // DOWNLOAD
-    // --------------------------------------------------
-
-    pdf.save(
-      `${data.username}-github-report.pdf`
-    );
-  } catch (error) {
-    console.error(
-      'PDF generation failed:',
-      error
-    );
-
-    alert(
-      'Could not generate the PDF. Please try again.'
-    );
   }
-}
 
   const tierStyle = TIER_STYLES[data?.tier] || TIER_STYLES.Novice;
 

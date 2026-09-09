@@ -268,58 +268,113 @@ export async function analyzeProfile(username: string) {
     throw new Error("Please enter a valid GitHub username.");
   }
 
+  // 1) Return a recent complete analysis from Supabase.
+  // Requires the SQL migration shown below.
+  try {
+    const { data: cached, error: cacheError } = await supabase
+      .from("github_analyses")
+      .select("analysis_data, analyzed_at")
+      .eq("username", cleanUsername)
+      .order("analyzed_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!cacheError && cached?.analysis_data && cached?.analyzed_at) {
+      const age = Date.now() - new Date(cached.analyzed_at).getTime();
+      if (age < 30 * 60 * 1000) return cached.analysis_data;
+    }
+
+    if (cacheError) console.warn("Cache lookup skipped:", cacheError.message);
+  } catch (error) {
+    console.warn("Cache lookup failed:", error);
+  }
+
   const headers = {
     Authorization: `Bearer ${githubToken}`,
     Accept: "application/vnd.github+json",
   };
 
-  const userRes = await fetch(
-    `https://api.github.com/users/${encodeURIComponent(cleanUsername)}`,
-    {
+  const graphqlQuery = `
+    query($login: String!) {
+      user(login: $login) {
+        contributionsCollection {
+          totalCommitContributions
+          totalPullRequestContributions
+          totalIssueContributions
+          totalPullRequestReviewContributions
+          contributionCalendar { totalContributions }
+        }
+      }
+    }
+  `;
+
+  // 2) These three GitHub requests are independent, so run them together.
+  const [userRes, reposRes, graphqlRes] = await Promise.all([
+    fetch(`https://api.github.com/users/${encodeURIComponent(cleanUsername)}`, {
       headers,
       cache: "no-store",
-    },
-  );
+    }),
+    fetch(
+      `https://api.github.com/users/${encodeURIComponent(cleanUsername)}/repos?per_page=100&sort=updated`,
+      { headers, cache: "no-store" },
+    ),
+    fetch("https://api.github.com/graphql", {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query: graphqlQuery,
+        variables: { login: cleanUsername },
+      }),
+      cache: "no-store",
+    }),
+  ]);
 
   if (!userRes.ok) {
-    if (userRes.status === 404) {
-      throw new Error("User not found on GitHub.");
-    }
-
+    if (userRes.status === 404) throw new Error("User not found on GitHub.");
     throw new Error(`GitHub profile request failed: ${userRes.status}`);
   }
-
-  const userData = await userRes.json();
-
-  const reposRes = await fetch(
-    `https://api.github.com/users/${encodeURIComponent(
-      cleanUsername,
-    )}/repos?per_page=100&sort=updated`,
-    {
-      headers,
-      cache: "no-store",
-    },
-  );
-
   if (!reposRes.ok) {
     throw new Error(`GitHub repositories request failed: ${reposRes.status}`);
   }
 
-  const reposData = await reposRes.json();
+  const [userData, reposData] = await Promise.all([
+    userRes.json(),
+    reposRes.json(),
+  ]);
 
   const originalRepos: GitHubRepo[] = Array.isArray(reposData)
     ? reposData.filter((repo: GitHubRepo) => !repo.fork)
     : [];
 
+  let contributions = 0;
+  let commits = 0;
+  let pullRequests = 0;
+  let issues = 0;
+  let reviews = 0;
+
+  try {
+    if (graphqlRes.ok) {
+      const graphqlData = await graphqlRes.json();
+      const collection = graphqlData?.data?.user?.contributionsCollection;
+      if (collection) {
+        contributions = collection.contributionCalendar?.totalContributions || 0;
+        commits = collection.totalCommitContributions || 0;
+        pullRequests = collection.totalPullRequestContributions || 0;
+        issues = collection.totalIssueContributions || 0;
+        reviews = collection.totalPullRequestReviewContributions || 0;
+      }
+    }
+  } catch (error) {
+    console.error("GitHub GraphQL error:", error);
+  }
+
   let totalStars = 0;
   let totalForks = 0;
-
   const languageCounts: Record<string, number> = {};
 
   originalRepos.forEach((repo) => {
     totalStars += repo.stargazers_count || 0;
     totalForks += repo.forks_count || 0;
-
     if (repo.language) {
       languageCounts[repo.language] = (languageCounts[repo.language] || 0) + 1;
     }
@@ -336,69 +391,7 @@ export async function analyzeProfile(username: string) {
     .sort((a, b) => b.percentage - a.percentage)
     .slice(0, 6);
 
-  let contributions = 0;
-  let commits = 0;
-  let pullRequests = 0;
-  let issues = 0;
-  let reviews = 0;
-
-  try {
-    const graphqlQuery = `
-      query($login: String!) {
-        user(login: $login) {
-          contributionsCollection {
-            totalCommitContributions
-            totalPullRequestContributions
-            totalIssueContributions
-            totalPullRequestReviewContributions
-            restrictedContributionsCount
-            contributionCalendar {
-              totalContributions
-            }
-          }
-        }
-      }
-    `;
-
-    const graphqlRes = await fetch("https://api.github.com/graphql", {
-      method: "POST",
-      headers: {
-        ...headers,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        query: graphqlQuery,
-        variables: {
-          login: cleanUsername,
-        },
-      }),
-      cache: "no-store",
-    });
-
-    if (graphqlRes.ok) {
-      const graphqlData = await graphqlRes.json();
-
-      const collection = graphqlData?.data?.user?.contributionsCollection;
-
-      if (collection) {
-        contributions =
-          collection.contributionCalendar?.totalContributions || 0;
-
-        commits = collection.totalCommitContributions || 0;
-
-        pullRequests = collection.totalPullRequestContributions || 0;
-
-        issues = collection.totalIssueContributions || 0;
-
-        reviews = collection.totalPullRequestReviewContributions || 0;
-      }
-    }
-  } catch (error) {
-    console.error("GitHub GraphQL error:", error);
-  }
-
   const ninetyDaysAgo = Date.now() - 90 * 24 * 60 * 60 * 1000;
-
   const recentRepositories = originalRepos.filter(
     (repo) => new Date(repo.updated_at).getTime() >= ninetyDaysAgo,
   ).length;
@@ -417,44 +410,26 @@ export async function analyzeProfile(username: string) {
   };
 
   const contributionScore = normalize(contributions, 1000) * 25;
-
   const commitScore = normalize(commits, 500) * 20;
-
   const repositoryScore = normalize(originalRepos.length, 30) * 15;
-
   const starScore = normalize(totalStars, 100) * 15;
-
   const forkScore = normalize(totalForks, 50) * 5;
-
-  const languageScore =
-    Math.min(1, Object.keys(languageCounts).length / 6) * 10;
-
+  const languageScore = Math.min(1, Object.keys(languageCounts).length / 6) * 10;
   const activityScore = Math.min(1, recentRepositories / 10) * 10;
 
   const score = Math.min(
     100,
     Math.round(
-      contributionScore +
-        commitScore +
-        repositoryScore +
-        starScore +
-        forkScore +
-        languageScore +
-        activityScore,
+      contributionScore + commitScore + repositoryScore + starScore +
+        forkScore + languageScore + activityScore,
     ),
   );
 
   let tier = "Novice";
-
-  if (score >= 90) {
-    tier = "S-Tier";
-  } else if (score >= 75) {
-    tier = "A-Tier";
-  } else if (score >= 55) {
-    tier = "B-Tier";
-  } else if (score >= 35) {
-    tier = "C-Tier";
-  }
+  if (score >= 90) tier = "S-Tier";
+  else if (score >= 75) tier = "A-Tier";
+  else if (score >= 55) tier = "B-Tier";
+  else if (score >= 35) tier = "C-Tier";
 
   const scoreBreakdown = {
     contributions: Math.round(contributionScore),
@@ -476,10 +451,7 @@ export async function analyzeProfile(username: string) {
 
   let parsedAnalysis = {
     jobRole: detectedRole,
-    strengths: [
-      "Active GitHub development",
-      "Demonstrated technical project work",
-    ],
+    strengths: ["Active GitHub development", "Demonstrated technical project work"],
     recommendations: [
       "Build more production-ready projects",
       "Contribute to established open-source projects",
@@ -488,6 +460,7 @@ export async function analyzeProfile(username: string) {
       "Your GitHub profile shows consistent software development activity and a growing technical portfolio.",
   };
 
+  // 3) Gemini gets a hard timeout. Fallback keeps the report usable.
   try {
     const prompt = `
 You are analyzing a GitHub developer profile.
@@ -523,9 +496,7 @@ TIER:
 ${tier}
 
 TASK:
-
 Determine the most realistic developer role based ONLY on the GitHub evidence.
-
 Do not always choose Software Engineer.
 
 Possible roles include:
@@ -542,19 +513,10 @@ Open Source Developer
 Mobile Developer
 
 Return ONLY valid JSON:
-
 {
   "jobRole": "specific role, 2-4 words",
-  "strengths": [
-    "specific evidence-based strength",
-    "specific evidence-based strength",
-    "specific evidence-based strength"
-  ],
-  "recommendations": [
-    "specific improvement",
-    "specific project or skill recommendation",
-    "specific career recommendation"
-  ],
+  "strengths": ["specific evidence-based strength", "specific evidence-based strength", "specific evidence-based strength"],
+  "recommendations": ["specific improvement", "specific project or skill recommendation", "specific career recommendation"],
   "careerSummary": "2-3 sentence evidence-based career summary"
 }
 
@@ -562,43 +524,40 @@ Do not exaggerate.
 Do not claim skills that are not supported by the GitHub data.
 `;
 
-    const geminiRes = await ai.models.generateContent({
+    const geminiPromise = ai.models.generateContent({
       model: "gemini-3.1-flash-lite",
       contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-      },
+      config: { responseMimeType: "application/json" },
     });
+
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error("Gemini timeout")), 8000);
+    });
+
+    const geminiRes = await Promise.race([geminiPromise, timeoutPromise]);
 
     if (geminiRes.text) {
       const aiResult = JSON.parse(geminiRes.text);
-
       parsedAnalysis = {
         jobRole: aiResult.jobRole || detectedRole,
-
         strengths: Array.isArray(aiResult.strengths)
-          ? aiResult.strengths
+          ? aiResult.strengths.slice(0, 3)
           : parsedAnalysis.strengths,
-
         recommendations: Array.isArray(aiResult.recommendations)
-          ? aiResult.recommendations
+          ? aiResult.recommendations.slice(0, 3)
           : parsedAnalysis.recommendations,
-
         careerSummary: aiResult.careerSummary || parsedAnalysis.careerSummary,
       };
     }
   } catch (error) {
     console.error("Gemini analysis failed:", error);
-
     parsedAnalysis.jobRole = detectedRole;
   }
 
   const topRepositories = [...originalRepos]
     .sort((a, b) => {
       const scoreA = (a.stargazers_count || 0) * 2 + (a.forks_count || 0);
-
       const scoreB = (b.stargazers_count || 0) * 2 + (b.forks_count || 0);
-
       return scoreB - scoreA;
     })
     .slice(0, 6)
@@ -613,7 +572,6 @@ Do not claim skills that are not supported by the GitHub data.
 
   const finalData = {
     username: cleanUsername,
-
     profile: {
       name: userData.name || "",
       avatar_url: userData.avatar_url || "",
@@ -624,57 +582,42 @@ Do not claim skills that are not supported by the GitHub data.
       html_url: userData.html_url || "",
       created_at: userData.created_at || "",
     },
-
     avatar_url: userData.avatar_url || "",
-
     bio: userData.bio || "",
-
     score,
-
     tier,
-
     score_breakdown: scoreBreakdown,
-
     metrics,
-
     job_match: parsedAnalysis.jobRole || detectedRole,
-
     role_scores: roleScores,
-
     top_languages: topLanguages,
-
     strengths: parsedAnalysis.strengths,
-
     recommendations: parsedAnalysis.recommendations,
-
     career_summary: parsedAnalysis.careerSummary,
-
     top_repositories: topRepositories,
   };
 
-  const { data: insertedData, error: insertError } = await supabase
-    .from("github_analyses")
-    .insert([
-      {
-        username: finalData.username,
+  // 4) Cache the complete result. Cache failure must not fail the report.
+  try {
+    const { error: insertError } = await supabase
+      .from("github_analyses")
+      .insert([
+        {
+          username: finalData.username,
+          avatar_url: finalData.avatar_url,
+          score: finalData.score,
+          tier: finalData.tier,
+          job_match: finalData.job_match,
+          top_languages: finalData.top_languages,
+          analysis_data: finalData,
+          analyzed_at: new Date().toISOString(),
+        },
+      ])
+      .select();
 
-        avatar_url: finalData.avatar_url,
-
-        score: finalData.score,
-
-        tier: finalData.tier,
-
-        job_match: finalData.job_match,
-
-        top_languages: finalData.top_languages,
-      },
-    ])
-    .select();
-
-  if (insertError) {
-    console.error("SUPABASE INSERT ERROR:", insertError);
-
-    throw new Error(`Supabase insert failed: ${insertError.message}`);
+    if (insertError) console.error("SUPABASE INSERT ERROR:", insertError);
+  } catch (error) {
+    console.error("Supabase save failed:", error);
   }
 
   return finalData;
