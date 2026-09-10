@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import {
   Search,
   Sparkles,
+  XCircle,
   Trophy,
   Briefcase,
   CheckCircle2,
@@ -152,9 +153,9 @@ function ScoreRing({ score, tier }: { score: number; tier: string }) {
             x2="100%"
             y2="100%"
           >
-            <stop offset="0%" />
-            <stop offset="50%" />
-            <stop offset="100%" />
+            <stop offset="0%" stopColor="#a855f7" />
+            <stop offset="50%" stopColor="#22d3ee" />
+            <stop offset="100%" stopColor="#a855f7" />
           </linearGradient>
         </defs>
       </svg>
@@ -189,7 +190,6 @@ export default function GitHubRanker() {
 
     setLoading(true);
     setError("");
-    setData(null);
 
     try {
       const result = await analyzeProfile(input);
@@ -271,24 +271,28 @@ export default function GitHubRanker() {
         y = 20;
       };
 
-      addTitle("GitHub Developer Intelligence Report");
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(18);
+      pdf.text("GitHub Developer Intelligence Report", margin, y);
+      y += 12;
 
       pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(14);
-
+      pdf.setFontSize(15);
       pdf.text(`@${data.username}`, margin, y);
-
-      y += 7;
+      y += 8;
 
       if (data.profile?.name) {
-        addText(data.profile.name, 10, false);
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(11);
+        pdf.text(data.profile.name, margin, y);
+        y += 7;
       }
 
       if (data.profile?.bio) {
         addText(data.profile.bio, 9, false);
       }
 
-      y += 3;
+      y += 6;
 
       // --------------------------------------------------
       // SCORE
@@ -296,16 +300,17 @@ export default function GitHubRanker() {
 
       addSection("GitHub Profile Score");
 
+      y += 2;
+
       pdf.setFont("helvetica", "bold");
       pdf.setFontSize(28);
-
       pdf.text(`${data.score}/100`, margin, y);
 
-      y += 20;
+      y += 12;
 
       addText(`Tier: ${data.tier}`, 10, true);
 
-      y += 3;
+      y += 6;
 
       // --------------------------------------------------
       // CAREER MATCH
@@ -540,8 +545,23 @@ export default function GitHubRanker() {
           </div>
 
           {error && (
-            <div className="mt-4 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3">
-              <p className="text-sm font-medium text-red-400">{error}</p>
+            <div
+              role="alert"
+              className="mt-4 flex items-start gap-3 rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-4 text-left shadow-lg shadow-red-950/20 backdrop-blur-xl"
+            >
+              <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-red-500/15">
+                <XCircle size={18} className="text-red-400" />
+              </div>
+
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-red-300">
+                  Analysis failed
+                </p>
+
+                <p className="mt-1 text-sm leading-5 text-red-200/80">
+                  {error}
+                </p>
+              </div>
             </div>
           )}
         </form>
