@@ -265,7 +265,18 @@ export async function analyzeProfile(username: string) {
   const cleanUsername = cleanGitHubUsername(username);
 
   if (!cleanUsername) {
-    throw new Error("Please enter a valid GitHub username.");
+    return {
+      success: false,
+      error: "Please enter a GitHub username or profile URL.",
+    };
+  }
+
+  if (!/^[a-zA-Z0-9-]+$/.test(cleanUsername)) {
+    return {
+      success: false,
+      error:
+        "Invalid GitHub username. Use a valid GitHub username or profile URL.",
+    };
   }
 
   const headers = {
@@ -283,10 +294,23 @@ export async function analyzeProfile(username: string) {
 
   if (!userRes.ok) {
     if (userRes.status === 404) {
-      throw new Error("User not found on GitHub.");
+      return {
+        success: false,
+        error: `GitHub user "${cleanUsername}" was not found. Check the username and try again.`,
+      };
     }
 
-    throw new Error(`GitHub profile request failed: ${userRes.status}`);
+    if (userRes.status === 403) {
+      return {
+        success: false,
+        error: "GitHub API rate limit reached. Please try again later.",
+      };
+    }
+
+    return {
+      success: false,
+      error: `GitHub profile request failed (${userRes.status}). Please try again.`,
+    };
   }
 
   const userData = await userRes.json();
@@ -302,8 +326,11 @@ export async function analyzeProfile(username: string) {
   );
 
   if (!reposRes.ok) {
-    throw new Error(`GitHub repositories request failed: ${reposRes.status}`);
-  }
+  return {
+    success: false,
+    error: `Unable to fetch GitHub repositories (${reposRes.status}). Please try again.`,
+  };
+}
 
   const reposData = await reposRes.json();
 
@@ -677,5 +704,8 @@ Do not claim skills that are not supported by the GitHub data.
     throw new Error(`Supabase insert failed: ${insertError.message}`);
   }
 
-  return finalData;
+  return {
+  success: true,
+  data: finalData,
+};
 }
