@@ -265,9 +265,14 @@ export async function analyzeProfile(username: string) {
   const cleanUsername = cleanGitHubUsername(username);
 
   if (!cleanUsername) {
-    throw new Error("Please enter a valid GitHub username.");
+    throw new Error("Please enter a GitHub username or profile URL.");
   }
 
+  if (!/^[a-zA-Z0-9-]+$/.test(cleanUsername)) {
+    throw new Error(
+      "Invalid GitHub username. Use a valid GitHub username or profile URL.",
+    );
+  }
   // 1) Return a recent complete analysis from Supabase.
   // Requires the SQL migration shown below.
   try {
@@ -330,12 +335,39 @@ export async function analyzeProfile(username: string) {
   ]);
 
   if (!userRes.ok) {
-    if (userRes.status === 404) throw new Error("User not found on GitHub.");
-    throw new Error(`GitHub profile request failed: ${userRes.status}`);
+  if (userRes.status === 404) {
+    throw new Error(
+      `GitHub user "${cleanUsername}" was not found. Check the username or profile URL and try again.`,
+    );
   }
+
+  if (userRes.status === 403) {
+    throw new Error(
+      "GitHub API rate limit reached. Please try again later.",
+    );
+  }
+
+  if (userRes.status >= 500) {
+    throw new Error(
+      "GitHub is temporarily unavailable. Please try again in a moment.",
+    );
+  }
+
+  throw new Error(
+    `GitHub profile request failed (${userRes.status}). Please try again.`,
+  );
+}
   if (!reposRes.ok) {
-    throw new Error(`GitHub repositories request failed: ${reposRes.status}`);
+  if (reposRes.status === 403) {
+    throw new Error(
+      "GitHub API rate limit reached. Please try again later.",
+    );
   }
+
+  throw new Error(
+    `Unable to fetch GitHub repositories (${reposRes.status}). Please try again.`,
+  );
+}
 
   const [userData, reposData] = await Promise.all([
     userRes.json(),
