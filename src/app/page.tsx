@@ -193,9 +193,19 @@ export default function GitHubRanker() {
 
     try {
       const result = await analyzeProfile(input);
-      setData(result);
+
+      if (!result.success) {
+        setError(result.error ?? "Unable to analyze GitHub profile.");
+        return;
+      }
+
+      setError("");
+      setData(result.data);
     } catch (err: any) {
-      setError(err?.message || "Failed to analyze GitHub profile.");
+      setError(
+        err?.message ||
+          "Something went wrong while analyzing the GitHub profile.",
+      );
     } finally {
       setLoading(false);
     }

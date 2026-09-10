@@ -657,5 +657,8 @@ export async function analyzeProfile(username: string) {
     console.error("Supabase save failed:", error);
   }
 
-  return finalData;
+  return {
+  success: true,
+  data: finalData,
+};
 }
