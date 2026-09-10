@@ -265,13 +265,18 @@ export async function analyzeProfile(username: string) {
   const cleanUsername = cleanGitHubUsername(username);
 
   if (!cleanUsername) {
-    throw new Error("Please enter a GitHub username or profile URL.");
+    return {
+      success: false,
+      error: "Please enter a GitHub username or profile URL.",
+    };
   }
 
   if (!/^[a-zA-Z0-9-]+$/.test(cleanUsername)) {
-    throw new Error(
-      "Invalid GitHub username. Use a valid GitHub username or profile URL.",
-    );
+    return {
+      success: false,
+      error:
+        "Invalid GitHub username. Use a valid GitHub username or profile URL.",
+    };
   }
   // 1) Return a recent complete analysis from Supabase.
   // Requires the SQL migration shown below.
@@ -335,39 +340,46 @@ export async function analyzeProfile(username: string) {
   ]);
 
   if (!userRes.ok) {
-  if (userRes.status === 404) {
-    throw new Error(
-      `GitHub user "${cleanUsername}" was not found. Check the username or profile URL and try again.`,
-    );
-  }
+    if (userRes.status === 404) {
+      return {
+        success: false,
+        error: `GitHub user "${cleanUsername}" was not found. Check the username or profile URL and try again.`,
+      };
+    }
 
-  if (userRes.status === 403) {
-    throw new Error(
-      "GitHub API rate limit reached. Please try again later.",
-    );
-  }
+    if (userRes.status === 403) {
+      return {
+        success: false,
+        error: "GitHub API rate limit reached. Please try again later.",
+      };
+    }
 
-  if (userRes.status >= 500) {
-    throw new Error(
-      "GitHub is temporarily unavailable. Please try again in a moment.",
-    );
-  }
+    if (userRes.status >= 500) {
+      return {
+        success: false,
+        error:
+          "GitHub is temporarily unavailable. Please try again in a moment.",
+      };
+    }
 
-  throw new Error(
-    `GitHub profile request failed (${userRes.status}). Please try again.`,
-  );
-}
+    return {
+      success: false,
+      error: `GitHub profile request failed (${userRes.status}). Please try again.`,
+    };
+  }
   if (!reposRes.ok) {
-  if (reposRes.status === 403) {
-    throw new Error(
-      "GitHub API rate limit reached. Please try again later.",
-    );
-  }
+    if (reposRes.status === 403) {
+      return {
+        success: false,
+        error: "GitHub API rate limit reached. Please try again later.",
+      };
+    }
 
-  throw new Error(
-    `Unable to fetch GitHub repositories (${reposRes.status}). Please try again.`,
-  );
-}
+    return {
+      success: false,
+      error: `Unable to fetch GitHub repositories (${reposRes.status}). Please try again.`,
+    };
+  }
 
   const [userData, reposData] = await Promise.all([
     userRes.json(),
@@ -658,7 +670,7 @@ export async function analyzeProfile(username: string) {
   }
 
   return {
-  success: true,
-  data: finalData,
-};
+    success: true,
+    data: finalData,
+  };
 }
